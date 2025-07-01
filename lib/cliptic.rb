@@ -12,20 +12,32 @@ module Cliptic
   # Windows compatibility check
   WINDOWS = Gem.win_platform?
   
+  # Load logger first since it's used by other classes
+  require_relative "cliptic/version"
+  require_relative "cliptic/logger.rb"
+  
   class Screen
     extend Curses
     
     def self.setup
+      Logger.log_screen_operation("Screen setup started")
       init_curses
       set_colors if has_colors?
+      Logger.log_screen_operation("Screen setup completed", {
+        lines: lines,
+        cols: cols,
+        colors: has_colors?
+      })
       redraw
     end
     
     def self.init_curses
+      Logger.log_screen_operation("Initializing curses", { platform: WINDOWS ? "Windows" : "Unix" })
       init_screen
       
       # Windows-specific terminal settings
       if WINDOWS
+        Logger.log_screen_operation("Applying Windows-specific settings")
         # PDCurses specific initialization
         noecho
         cbreak
@@ -35,10 +47,12 @@ module Cliptic
         # Set code page for proper character display
         system("chcp 65001 > nul") if WINDOWS
       else
+        Logger.log_screen_operation("Applying Unix-specific settings")
         raw
         noecho
         curs_set(0)
       end
+      Logger.log_screen_operation("Curses initialization completed")
     end
     
     def self.set_colors
@@ -51,6 +65,7 @@ module Cliptic
     end
     
     def self.clear
+      Logger.log_screen_operation("Clearing screen")
       stdscr.clear
       stdscr.refresh
     end
@@ -69,20 +84,21 @@ module Cliptic
     end
     
     def self.redraw(cb:nil)
+      Logger.log_screen_operation("Screen redraw requested", { callback: !cb.nil? })
       Interface::Resizer.new.show if Screen.too_small?
       Screen.clear
       cb.call if cb
+      Logger.log_screen_operation("Screen redraw completed")
     end
   end
   
-  require_relative "cliptic/version"
-  require_relative "cliptic/curses_helper"
-  require_relative "cliptic/terminal"
-  require_relative "cliptic/lib"
-  require_relative "cliptic/config"
-  require_relative "cliptic/database"
-  require_relative "cliptic/windows"
-  require_relative "cliptic/interface"
-  require_relative "cliptic/menus"
-  require_relative "cliptic/main"
+  require_relative "cliptic/curses_helper.rb"
+  require_relative "cliptic/terminal.rb"
+  require_relative "cliptic/lib.rb"
+  require_relative "cliptic/config.rb"
+  require_relative "cliptic/database.rb"
+  require_relative "cliptic/windows.rb"
+  require_relative "cliptic/interface.rb"
+  require_relative "cliptic/menus.rb"
+  require_relative "cliptic/main.rb"
 end

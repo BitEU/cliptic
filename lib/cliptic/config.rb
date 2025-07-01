@@ -17,6 +17,7 @@ module Cliptic
       def self.set
         $colors = colors
         $config = make_bool(config)
+        Logger.init
       end
       
       private
@@ -32,7 +33,7 @@ module Cliptic
       
       def self.config
         {
-          auto_advance:1, auto_mark:1, auto_save:1
+          auto_advance:1, auto_mark:1, auto_save:1, ux_debug:0
         }
       end
       
@@ -44,6 +45,7 @@ module Cliptic
     class Custom < Default 
       def self.set
         cfg_file_exists? ? read_cfg : gen_cfg_menu.choose_opt
+        Logger.init
       end
       
       private

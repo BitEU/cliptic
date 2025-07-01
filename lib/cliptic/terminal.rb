@@ -3,10 +3,16 @@ module Cliptic
     class Command
       def self.run
         begin
+          Logger.log_ux("TERMINAL", "Cliptic started", {
+            args: ARGV.join(" "),
+            platform: RUBY_PLATFORM
+          })
           ARGV.size > 0 ? parse_args : main_menu
         rescue Interrupt
+          Logger.log_ux("TERMINAL", "Interrupted by user")
           cleanup_and_exit(nil, "Exiting cliptic...")
         rescue StandardError => e
+          Logger.log_ux("TERMINAL", "Fatal error", { error: e.message })
           cleanup_and_exit(e)
         end
       end
@@ -54,20 +60,25 @@ module Cliptic
       
       def self.setup
         begin
+          Logger.log_ux("TERMINAL", "Setup started")
           Config::Default.set
           Screen.setup
           Config::Custom.set
+          Logger.log_ux("TERMINAL", "Setup completed")
           at_exit { close }
         rescue => e
+          Logger.log_ux("TERMINAL", "Setup error", { error: e.message })
           puts "Setup error: #{e.message}"
           raise
         end
       end
       
       def self.main_menu
+        Logger.log_ux("TERMINAL", "Starting main menu")
         setup
         Cliptic::Menus::Main.new.choose_opt
       rescue => e
+        Logger.log_ux("TERMINAL", "Error in main menu", { error: e.message })
         cleanup_and_exit(e)
       end
       

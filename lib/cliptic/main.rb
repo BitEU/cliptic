@@ -568,15 +568,27 @@ module Cliptic
         end
         
         def move(y:0, x:0)
+          old_pos = cursor.pos.dup
           cursor.move(y:y, x:x)
+          
+          Logger.log_cursor_move(old_pos, cursor.pos, "Board cursor")
+          
           if current_cell.blocked
+            Logger.log_ux("BOARD", "Blocked cell encountered, continuing move")
             move(y:y, x:x)
           elsif outside_clue?
+            Logger.log_ux("BOARD", "Outside clue, setting new clue")
             set_clue(clue:get_clue_at(**cursor.pos))
           end
         end
         
         def insert_char(char:, advance:true)
+          Logger.log_ux("BOARD", "Character inserted", {
+            char: char,
+            position: cursor.pos,
+            advance: advance
+          })
+          
           addch(char:char)
           move_after_insert(advance:advance)
           check_current_clue
@@ -756,6 +768,7 @@ module Cliptic
         attr_accessor :mode, :continue, :unsaved
         
         def initialize(date:Date.today)
+          Logger.log_game_state("Game initialization started", { date: date.to_s })
           @date  = date
           init_windows
           @timer = Timer.new(time:state.time, bar:top_b, 
@@ -763,16 +776,26 @@ module Cliptic
           @ctrls = Controller.new(game:self)
           @unsaved  = false
           @continue = true
+          Logger.log_game_state("Game initialization completed")
           draw
         end
         
         def play
+          Logger.log_game_state("Game play started", { 
+            done: state.done, 
+            date: date.to_s 
+          })
+          
           if state.done
+            Logger.log_game_state("Showing completed menu")
             show_completed_menu
           else
+            Logger.log_game_state("Starting game and timer threads")
             add_to_recents
             game_and_timer_threads.map(&:join)
           end
+          
+          Logger.log_game_state("Game play ended")
         end
         
         def redraw
@@ -788,12 +811,19 @@ module Cliptic
         end
         
         def mode=(mode)
+          old_mode = @mode
           @mode = mode
+          Logger.log_game_state("Mode changed", { 
+            from: old_mode, 
+            to: mode 
+          })
           bot_b.mode(mode)
         end
         
         def user_input
-          board.grid.getch
+          key = board.grid.getch
+          Logger.log_keypress(key, nil, "Game input")
+          key
         end
         
         def pause
@@ -860,10 +890,29 @@ module Cliptic
         end
         
         def run
+          Logger.log_game_state("Main game loop started")
+          
           until game_finished?
-            ctrls.route(char:user_input)&.call
+            key_input = user_input
+            action = ctrls.route(char:key_input)
+            
+            if action
+              Logger.log_ux("GAME", "Executing game action")
+              action.call
+            end
+            
+            Logger.log_ux("GAME", "Updating board")
             board.update
+            
+            if board.puzzle.complete?
+              Logger.log_game_state("Puzzle completed!")
+            end
           end
+          
+          Logger.log_game_state("Main game loop ended", { 
+            completed: board.puzzle.complete?,
+            continue: continue 
+          })
           game_over
         end
         
@@ -933,26 +982,55 @@ module Cliptic
         end
         
         def route(char:)
+          Logger.log_ux("CONTROLLER", "Routing key input", {
+            key: char.is_a?(Integer) ? char : char.ord,
+            key_char: char.is_a?(Integer) ? (char < 256 ? char.chr : "SPECIAL") : char,
+            mode: game.mode
+          })
+          
           # Windows-specific key handling
           if WINDOWS
             # Handle Windows special keys
             char = normalize_windows_key(char)
+            Logger.log_ux("CONTROLLER", "Windows key normalized", { normalized_key: char })
           end
           
-          if is_ctrl_key?(char)
+          action = if is_ctrl_key?(char)
+            Logger.log_ux("CONTROLLER", "Control key detected", { key: char })
             controls[:G][char.to_i]
           elsif is_arrow_key?(char)
+            Logger.log_ux("CONTROLLER", "Arrow key detected", { key: char })
             arrow(char)
           else
             case game.mode
-            when :N then normal(char:char)
-            when :I then insert(char:char)
+            when :N 
+              Logger.log_ux("CONTROLLER", "Normal mode key", { key: char })
+              normal(char:char)
+            when :I 
+              Logger.log_ux("CONTROLLER", "Insert mode key", { key: char })
+              insert(char:char)
             end
           end
+          
+          if action
+            Logger.log_ux("CONTROLLER", "Executing key action")
+            action.call if action.respond_to?(:call)
+          else
+            Logger.log_ux("CONTROLLER", "No action found for key", { key: char })
+          end
+          
+          action
         end
         
         def normal(char:, n:1)
+          Logger.log_ux("CONTROLLER", "Normal mode handler", { 
+            char: char, 
+            n: n,
+            is_digit: (?0..?9).cover?(char)
+          })
+          
           if (?0..?9).cover?(char)
+            Logger.log_ux("CONTROLLER", "Awaiting integer input", { digit: char.to_i })
             await_int(n:char.to_i)
           else
             controls(n)[:N][char]
@@ -960,12 +1038,25 @@ module Cliptic
         end
         
         def insert(char:)
+          Logger.log_ux("CONTROLLER", "Insert mode handler", { 
+            char: char,
+            char_code: char.is_a?(Integer) ? char : char.ord
+          })
+          
           case char
-          when 27  then ->{game.mode = :N}
-          when 127, 8 then ->{game.board.delete_char}  # Handle both backspace codes
+          when 27  then 
+            Logger.log_ux("CONTROLLER", "Escape - switching to normal mode")
+            ->{game.mode = :N}
+          when 127, 8 then 
+            Logger.log_ux("CONTROLLER", "Backspace - deleting character")
+            ->{game.board.delete_char}  # Handle both backspace codes
           when ?A..?z 
+            Logger.log_ux("CONTROLLER", "Character input", { char: char })
             ->{game.board.insert_char(char:char);
                game.unsaved = true }
+          else
+            Logger.log_ux("CONTROLLER", "Unhandled insert mode key", { char: char })
+            nil
           end
         end
         
@@ -979,12 +1070,14 @@ module Cliptic
         end
         
         def arrow(char)
+          Logger.log_ux("CONTROLLER", "Arrow key handler", { key: char })
           mv = case char
           when Curses::KEY_UP, 72    then {y:-1}
           when Curses::KEY_DOWN, 80   then {y:1}
           when Curses::KEY_LEFT, 75   then {x:-1}
           when Curses::KEY_RIGHT, 77  then {x:1}
           end
+          Logger.log_ux("CONTROLLER", "Arrow movement", mv)
           ->{game.board.move(**mv)}
         end
         

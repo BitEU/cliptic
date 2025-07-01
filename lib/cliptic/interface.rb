@@ -57,10 +57,17 @@ module Cliptic
         @draw_bars = true
       end
       def draw
+        Logger.log_window_operation("Drawing menu box", self.class.name, {
+          title: @title,
+          draw_bars: @draw_bars,
+          line: line,
+          dimensions: "#{y}x#{x}"
+        })
         super
         [top_b, bot_b].each(&:draw) if draw_bars
         logo.draw
         add_title if title
+        Logger.log_window_operation("Menu box draw completed", self.class.name)
         self
       end
       def line
@@ -114,21 +121,47 @@ module Cliptic
       end
       
       def select
+        Logger.log_ux("SELECTOR", "Starting selection loop", {
+          options_count: opts.length,
+          initial_cursor: cursor
+        })
+        
         while @run
           begin
             draw
             key = getch
+            Logger.log_keypress(key, nil, "Selector")
+            
             # Handle Windows-specific key processing
             key = process_windows_key(key) if WINDOWS
             action = ctrls[key]
-            action.call if action
+            
+            if action
+              Logger.log_ux("SELECTOR", "Executing key action", {
+                key: key.is_a?(Integer) ? key : key.ord,
+                cursor_before: cursor
+              })
+              action.call
+              Logger.log_ux("SELECTOR", "Key action completed", {
+                cursor_after: cursor
+              })
+            else
+              Logger.log_ux("SELECTOR", "No action for key", { key: key })
+            end
           rescue => e
+            Logger.log_ux("SELECTOR", "Error in selection loop", {
+              error: e.message,
+              cursor: cursor
+            })
             # Log error and continue instead of crashing
             puts "Error in selector: #{e.message}" if $DEBUG
             puts e.backtrace.join("\n") if $DEBUG
           end
         end
+        
+        Logger.log_ux("SELECTOR", "Selection loop ended", { final_cursor: cursor })
       rescue => e
+        Logger.log_ux("SELECTOR", "Fatal error in selector", { error: e.message })
         puts "Fatal error in selector: #{e.message}"
         @run = false
       end
@@ -138,7 +171,9 @@ module Cliptic
       end
       
       def cursor=(n)
+        old_cursor = @cursor
         @cursor = Pos.wrap(val:n, min:0, max:opts.length-1)
+        Logger.log_selection_change(old_cursor, @cursor, "Selector cursor")
       end
       
       private
@@ -172,6 +207,12 @@ module Cliptic
       
       def draw
         begin
+          Logger.log_window_operation("Drawing selector", self.class.name, {
+            cursor: cursor,
+            options_count: opts.length,
+            current_option: opts[cursor]
+          })
+          
           Curses.curs_set(0)
           setpos
           opts.each_with_index do |opt, i|
@@ -181,7 +222,10 @@ module Cliptic
           end
           tick.call if tick
           refresh
+          
+          Logger.log_window_operation("Selector draw completed", self.class.name)
         rescue => e
+          Logger.log_ux("SELECTOR", "Error in draw", { error: e.message })
           puts "Error in draw: #{e.message}" if $DEBUG
         end
       end
@@ -225,21 +269,39 @@ module Cliptic
         @selector = sel.new(opts:sel_opts, ctrls:ctrls, line:line+5, x:logo.x, tick:tick)
       end
       def choose_opt
+        Logger.log_menu_draw("Menu selection started", opts.keys, selector.cursor)
         show
         selector.select
+        Logger.log_menu_draw("Menu selection ended", opts.keys, selector.cursor)
       end
       def enter(pre_proc:->{hide}, post_proc:->{show})
         begin
+          Logger.log_ux("MENU", "Enter action triggered", {
+            selected_option: opts.keys[selector.cursor],
+            cursor: selector.cursor
+          })
+          
           pre_proc.call if pre_proc
           action = opts.values[selector.cursor]
           if action
+            Logger.log_ux("MENU", "Executing menu action", {
+              option: opts.keys[selector.cursor]
+            })
             action.call
+            Logger.log_ux("MENU", "Menu action completed")
           else
+            Logger.log_ux("MENU", "No action found for cursor position", {
+              cursor: selector.cursor
+            })
             puts "No action found for cursor position #{selector.cursor}" if $DEBUG
           end
           reset_pos
           post_proc.call if post_proc
         rescue => e
+          Logger.log_ux("MENU", "Error in menu enter", {
+            error: e.message,
+            cursor: selector.cursor
+          })
           puts "Error in menu enter: #{e.message}"
           puts e.backtrace.join("\n") if $DEBUG
           # Try to recover
@@ -248,6 +310,7 @@ module Cliptic
         end
       end
       def back(post_proc:->{hide})
+        Logger.log_ux("MENU", "Back action triggered", { cursor: selector.cursor })
         selector.stop
         post_proc.call if post_proc
       end
@@ -259,24 +322,60 @@ module Cliptic
       end
       def ctrls
         base_ctrls = {
-          ?j  => ->{selector.cursor += 1},
-          ?k  => ->{selector.cursor -= 1},
-          258 => ->{selector.cursor += 1},
-          259 => ->{selector.cursor -= 1},
-          10  => ->{enter},
-          13  => ->{enter},  # Carriage return for Windows
-          ?q  => ->{back},
-          3   => ->{back},
-          27  => ->{back},   # Escape key
+          ?j  => ->{
+            Logger.log_keypress('j', 'down_vim', 'Menu navigation')
+            selector.cursor += 1
+          },
+          ?k  => ->{
+            Logger.log_keypress('k', 'up_vim', 'Menu navigation')
+            selector.cursor -= 1
+          },
+          258 => ->{
+            Logger.log_keypress(258, 'down_arrow', 'Menu navigation')
+            selector.cursor += 1
+          },
+          259 => ->{
+            Logger.log_keypress(259, 'up_arrow', 'Menu navigation')
+            selector.cursor -= 1
+          },
+          10  => ->{
+            Logger.log_keypress(10, 'enter', 'Menu selection')
+            enter
+          },
+          13  => ->{
+            Logger.log_keypress(13, 'carriage_return', 'Menu selection')
+            enter
+          },  # Carriage return for Windows
+          ?q  => ->{
+            Logger.log_keypress('q', 'quit', 'Menu exit')
+            back
+          },
+          3   => ->{
+            Logger.log_keypress(3, 'ctrl_c', 'Menu exit')
+            back
+          },
+          27  => ->{
+            Logger.log_keypress(27, 'escape', 'Menu exit')
+            back
+          },   # Escape key
           Curses::KEY_RESIZE => 
-            ->{Screen.redraw(cb:->{redraw})}
+            ->{
+              Logger.log_screen_operation("Window resize detected in menu")
+              Screen.redraw(cb:->{redraw})
+            }
         }
         
         # Add Windows-specific arrow key handling
         if WINDOWS
           base_ctrls.merge!({
-            72 => ->{selector.cursor -= 1},  # Up arrow
-            80 => ->{selector.cursor += 1},  # Down arrow
+            72 => ->{
+              Logger.log_keypress(72, 'windows_up_arrow', 'Menu navigation')
+              selector.cursor -= 1
+            },  # Up arrow
+            80 => ->{
+              Logger.log_keypress(80, 'windows_down_arrow', 'Menu navigation')
+              selector.cursor += 1
+            },  # Down arrow
           })
         end
         

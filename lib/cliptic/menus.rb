@@ -62,29 +62,91 @@ module Cliptic
       end
       def ctrls
         base_ctrls = {
-          ?j  => ->{inc_date(1)},
-          ?k  => ->{inc_date(-1)},
-          ?h  => ->{selector.cursor -= 1},
-          ?l  => ->{selector.cursor += 1},
-          258 => ->{inc_date(1)},   # KEY_DOWN
-          259 => ->{inc_date(-1)},  # KEY_UP
-          260 => ->{selector.cursor -= 1},  # KEY_LEFT
-          261 => ->{selector.cursor += 1},  # KEY_RIGHT
-          10  => ->{enter},          # Enter key
-          13  => ->{enter},          # Carriage return (Windows)
-          ?q  => ->{back},
-          3   => ->{back},           # Ctrl+C
-          27  => ->{back},           # Escape
-          Curses::KEY_RESIZE => ->{Screen.redraw(cb:->{redraw})}
+          ?j  => ->{
+            Logger.log_keypress('j', 'down_vim', 'Date selector')
+            inc_date(1)
+          },
+          ?k  => ->{
+            Logger.log_keypress('k', 'up_vim', 'Date selector')
+            inc_date(-1)
+          },
+          ?h  => ->{
+            Logger.log_keypress('h', 'left_vim', 'Date selector')
+            Logger.log_selection_change(selector.cursor, selector.cursor - 1, 'Date field')
+            selector.cursor -= 1
+          },
+          ?l  => ->{
+            Logger.log_keypress('l', 'right_vim', 'Date selector')
+            Logger.log_selection_change(selector.cursor, selector.cursor + 1, 'Date field')
+            selector.cursor += 1
+          },
+          258 => ->{
+            Logger.log_keypress(258, 'down_arrow', 'Date selector')
+            inc_date(1)
+          },   # KEY_DOWN
+          259 => ->{
+            Logger.log_keypress(259, 'up_arrow', 'Date selector')
+            inc_date(-1)
+          },  # KEY_UP
+          260 => ->{
+            Logger.log_keypress(260, 'left_arrow', 'Date selector')
+            Logger.log_selection_change(selector.cursor, selector.cursor - 1, 'Date field')
+            selector.cursor -= 1
+          },  # KEY_LEFT
+          261 => ->{
+            Logger.log_keypress(261, 'right_arrow', 'Date selector')
+            Logger.log_selection_change(selector.cursor, selector.cursor + 1, 'Date field')
+            selector.cursor += 1
+          },  # KEY_RIGHT
+          10  => ->{
+            Logger.log_keypress(10, 'enter', 'Date selection')
+            Logger.log_ux("DATE_SELECTOR", "Date selected", { date: stat_date.to_s })
+            enter
+          },          # Enter key
+          13  => ->{
+            Logger.log_keypress(13, 'carriage_return', 'Date selection')
+            Logger.log_ux("DATE_SELECTOR", "Date selected", { date: stat_date.to_s })
+            enter
+          },          # Carriage return (Windows)
+          ?q  => ->{
+            Logger.log_keypress('q', 'quit', 'Date selector exit')
+            back
+          },
+          3   => ->{
+            Logger.log_keypress(3, 'ctrl_c', 'Date selector exit')
+            back
+          },           # Ctrl+C
+          27  => ->{
+            Logger.log_keypress(27, 'escape', 'Date selector exit')
+            back
+          },           # Escape
+          Curses::KEY_RESIZE => ->{
+            Logger.log_screen_operation("Window resize in date selector")
+            Screen.redraw(cb:->{redraw})
+          }
         }
         
         # Add Windows-specific arrow key handling
         if WINDOWS
           base_ctrls.merge!({
-            72 => ->{inc_date(-1)},  # Up arrow
-            80 => ->{inc_date(1)},   # Down arrow
-            75 => ->{selector.cursor -= 1},  # Left arrow
-            77 => ->{selector.cursor += 1},  # Right arrow
+            72 => ->{
+              Logger.log_keypress(72, 'windows_up_arrow', 'Date selector')
+              inc_date(-1)
+            },  # Up arrow
+            80 => ->{
+              Logger.log_keypress(80, 'windows_down_arrow', 'Date selector')
+              inc_date(1)
+            },   # Down arrow
+            75 => ->{
+              Logger.log_keypress(75, 'windows_left_arrow', 'Date selector')
+              Logger.log_selection_change(selector.cursor, selector.cursor - 1, 'Date field')
+              selector.cursor -= 1
+            },  # Left arrow
+            77 => ->{
+              Logger.log_keypress(77, 'windows_right_arrow', 'Date selector')
+              Logger.log_selection_change(selector.cursor, selector.cursor + 1, 'Date field')
+              selector.cursor += 1
+            },  # Right arrow
           })
         end
         
@@ -129,12 +191,20 @@ module Cliptic
         @opts.dup.tap{|d| d[selector.cursor] += n }
       end
       def inc_date(n)
+        old_date = stat_date
         case selector.cursor
         when 0 then inc_day(n)
         when 1 then inc_month(n)
         when 2 then @opts[2] += n
         end
         check_in_range
+        new_date = stat_date
+        Logger.log_ux("DATE_SELECTOR", "Date incremented", {
+          field: ['day', 'month', 'year'][selector.cursor],
+          increment: n,
+          old_date: old_date.to_s,
+          new_date: new_date.to_s
+        })
       end
       def inc_day(n)
         next_date(n).tap do |date|
