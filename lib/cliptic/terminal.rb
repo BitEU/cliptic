@@ -2,37 +2,58 @@ module Cliptic
   module Terminal
     class Command
       def self.run
-        ARGV.size > 0 ?
-          parse_args : main_menu
+        begin
+          ARGV.size > 0 ? parse_args : main_menu
+        rescue Interrupt
+          puts "\nExiting cliptic..."
         rescue StandardError => e
-          Curses.close_screen
-          abort(e.message)
+          cleanup_and_exit(e)
+        end
       end
+      
       private
-      def self.setup
-        Config::Default.set
-        Screen.setup
-        Config::Custom.set
-        at_exit{close}
+      
+      def self.cleanup_and_exit(error)
+        begin
+          Curses.close_screen if Curses.stdscr
+        rescue
+          # Ignore errors during cleanup
+        end
+        
+        puts "Error: #{error.message}"
+        puts "Backtrace:" if $DEBUG
+        puts error.backtrace if $DEBUG
+        exit(1)
       end
+      
+      def self.setup
+        begin
+          Config::Default.set
+          Screen.setup
+          Config::Custom.set
+          at_exit { close }
+        rescue => e
+          puts "Setup error: #{e.message}"
+          raise
+        end
+      end
+      
       def self.main_menu
         setup
         Cliptic::Menus::Main.new.choose_opt
+      rescue => e
+        cleanup_and_exit(e)
       end
-      def self.parse_args
-        case arg = ARGV.shift
-        when "reset", "-r" then Reset_Stats.route.call
-        when "today", "-t" then play(ARGV.shift.to_i)
-        end
-      end
-      def self.play(offset)
-        setup
-        Cliptic::Main::Player::
-          Game.new(date:Date.today+offset).play
-      end
+      
       def self.close
-        Curses.close_screen
-        puts "Thanks for playing!"
+        begin
+          if Curses.stdscr && !Curses.isendwin
+            Curses.close_screen
+            puts "Thanks for playing!"
+          end
+        rescue => e
+          puts "Thanks for playing!"
+        end
       end
     end
     class Reset_Stats

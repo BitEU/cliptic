@@ -105,36 +105,88 @@ module Cliptic
     class Selector < Windows::Window
       attr_reader :opts, :ctrls, :run, :tick
       attr_accessor :cursor
+      
       def initialize(opts:, ctrls:, x:, line:,
                      tick:nil, y:opts.length, col:nil)
         super(y:y, x:x, line:line, col:col)
         @opts, @ctrls, @tick = opts, ctrls, tick
         @cursor, @run = 0, true
       end
+      
       def select
         while @run
-          draw
-          ctrls[getch]&.call
+          begin
+            draw
+            key = getch
+            # Handle Windows-specific key processing
+            key = process_windows_key(key) if WINDOWS
+            action = ctrls[key]
+            action.call if action
+          rescue => e
+            # Log error and continue instead of crashing
+            puts "Error in selector: #{e.message}" if $DEBUG
+            # Try to gracefully exit
+            @run = false
+          end
         end
+      rescue => e
+        puts "Fatal error in selector: #{e.message}"
+        @run = false
       end
+      
       def stop
         @run = false
       end
+      
       def cursor=(n)
-        @cursor = Pos.wrap(val:n,min:0,max:opts.length-1)
+        @cursor = Pos.wrap(val:n, min:0, max:opts.length-1)
       end
+      
       private
-      def draw
-        Curses.curs_set(0)
-        setpos
-        opts.each_with_index do |opt, i|
-          standout if cursor == i
-          self << format_opt(opt)
-          standend
+      
+      def process_windows_key(key)
+        return key unless WINDOWS
+        
+        case key
+        when 224  # Extended key prefix in Windows
+          ext_key = getch rescue nil
+          return nil unless ext_key
+          case ext_key
+          when 72 then 259  # Up arrow -> Curses::KEY_UP
+          when 80 then 258  # Down arrow -> Curses::KEY_DOWN  
+          when 75 then 260  # Left arrow -> Curses::KEY_LEFT
+          when 77 then 261  # Right arrow -> Curses::KEY_RIGHT
+          else ext_key
+          end
+        when 0    # Another extended key prefix
+          ext_key = getch rescue nil
+          return nil unless ext_key
+          case ext_key
+          when 72 then 259  # Up arrow
+          when 80 then 258  # Down arrow
+          else ext_key
+          end
+        else
+          key
         end
-        tick.call if tick
-        refresh
       end
+      
+      def draw
+        begin
+          Curses.curs_set(0)
+          setpos
+          opts.each_with_index do |opt, i|
+            standout if cursor == i
+            self << format_opt(opt)
+            standend
+          end
+          tick.call if tick
+          refresh
+        rescue => e
+          puts "Error in draw: #{e.message}" if $DEBUG
+        end
+      end
+      
       def format_opt(opt)
         opt.to_s.center(x)
       end

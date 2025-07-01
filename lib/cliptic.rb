@@ -56,7 +56,16 @@ module Cliptic
     end
     
     def self.too_small?
-      lines < 36 || cols < 61
+      # Reduced minimum requirements for better Windows compatibility
+      # Original: lines < 36 || cols < 61
+      # New: More reasonable minimums that work with standard terminal sizes
+      if WINDOWS
+        # Even more relaxed for Windows conhost
+        lines < 25 || cols < 80
+      else
+        # Slightly relaxed for other platforms
+        lines < 30 || cols < 80
+      end
     end
     
     def self.redraw(cb:nil)

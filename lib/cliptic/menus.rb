@@ -26,17 +26,47 @@ module Cliptic
         "Select Date"
       end
       def ctrls
-        super.merge({
-          ?h  => ->{selector.cursor -= 1},
-          ?l  => ->{selector.cursor += 1},
-          ?j  => ->{inc_date(1)},
-          ?k  => ->{inc_date(-1)},
-          258 => ->{inc_date(1)},
-          259 => ->{inc_date(-1)},
-          260 => ->{selector.cursor -= 1},
-          261 => ->{selector.cursor += 1}
-        })
+        {
+          ?j  => ->{selector.cursor += 1},
+          ?k  => ->{selector.cursor -= 1},
+          258 => ->{selector.cursor += 1},  # KEY_DOWN
+          259 => ->{selector.cursor -= 1},  # KEY_UP
+          10  => ->{enter},                 # Enter key
+          13  => ->{enter},                 # Carriage return (Windows)
+          ?q  => ->{back},
+          3   => ->{back},                  # Ctrl+C
+          27  => ->{back},                  # Escape
+          Curses::KEY_RESIZE => ->{Screen.redraw(cb:->{redraw})}
+        }
       end
+      def enter(pre_proc:->{hide}, post_proc:->{show})
+        begin
+          pre_proc.call if pre_proc
+          action = opts.values[selector.cursor]
+          if action
+            action.call
+          else
+            puts "No action defined for selection" if $DEBUG
+          end
+          reset_pos
+          post_proc.call if post_proc
+        rescue => e
+          puts "Error in enter: #{e.message}"
+          # Try to recover gracefully
+          reset_pos
+          post_proc.call if post_proc
+        end
+      end
+      
+      def back(post_proc:->{hide})
+        begin
+          selector.stop
+          post_proc.call if post_proc
+        rescue => e
+          puts "Error in back: #{e.message}"
+        end
+      end
+
       def stat_date
         Date.new(*@opts.reverse)
       end
