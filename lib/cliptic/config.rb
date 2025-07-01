@@ -1,12 +1,24 @@
 module Cliptic
   module Config
-    Dir_Path  = "#{Dir.home}/.config/cliptic"
-    File_Path = "#{Dir_Path}/cliptic.rc"
+    # Windows-compatible config path
+    Dir_Path  = if WINDOWS
+      "#{ENV['APPDATA']}\\cliptic"
+    else
+      "#{Dir.home}/.config/cliptic"
+    end
+    
+    File_Path = if WINDOWS
+      "#{Dir_Path}\\cliptic.rc"
+    else
+      "#{Dir_Path}/cliptic.rc"
+    end
+    
     class Default
       def self.set
         $colors = colors
         $config = make_bool(config)
       end
+      
       private
       def self.colors
         {
@@ -17,19 +29,23 @@ module Cliptic
           menu_active:15, menu_inactive:0
         }
       end
+      
       def self.config
         {
           auto_advance:1, auto_mark:1, auto_save:1
         }
       end
+      
       def self.make_bool(hash)
         hash.each{|k, v| hash[k] = v == 1 }
       end
     end
+    
     class Custom < Default 
       def self.set
         cfg_file_exists? ? read_cfg : gen_cfg_menu.choose_opt
       end
+      
       private
       def self.read_cfg
         Reader.new.tap do |file|
@@ -39,15 +55,18 @@ module Cliptic
         end
         make_bool($config)
       end
+      
       def self.key_map
         {
           $colors => {key:"hi"},
           $config => {key:"set"}
         }
       end
+      
       def self.cfg_file_exists?
         File.exist?(File_Path)
       end
+      
       def self.gen_cfg_menu
         Cliptic::Interface::Yes_No_Menu.new(
           yes:->{Generator.new.write},
@@ -55,11 +74,13 @@ module Cliptic
         )
       end
     end
+    
     class Reader
       attr_reader :lines
       def initialize
         @lines = File.read(File_Path).each_line.map.to_a
       end
+      
       def read(key:)
         lines.grep(/^\s*#{key}/)
           .map{|l| l.gsub(/^\s*#{key}\s+/, "")
@@ -68,15 +89,18 @@ module Cliptic
           .to_h
       end
     end
+    
     class Generator
       def write
         FileUtils.mkdir_p(Dir_Path) unless cfg_dir_exists
         File.write(File_Path, make_file)
       end
+      
       private
       def cfg_dir_exists
         Dir.exist?(Dir_Path)
       end
+      
       def file_data
         {
           "Colour Settings" => {
@@ -87,6 +111,7 @@ module Cliptic
           }
         }
       end
+      
       def make_file
         file_data.map do |comment, data|
           ["//#{comment}"] + data[:values].map{|k, v| "#{data[:cmd]} #{k} #{v}"} + ["\n"]

@@ -19,7 +19,14 @@ Gem::Specification.new do |spec|
   spec.bindir = "bin"
   spec.executables << "cliptic"
   spec.require_paths = ["lib"]
-  spec.add_dependency("curses", "~> 1.4.0")
-  spec.add_dependency("curb", "~> 0.9.11")
-  spec.add_dependency("sqlite3", "~> 1.4.2")
+  
+  # Windows-specific dependencies
+  if Gem.win_platform?
+    spec.add_dependency("curses", ">= 1.4.0")  # More flexible version requirement
+  else
+    spec.add_dependency("curses", "~> 1.4.0")
+  end
+  
+  # No curb dependency - using built-in net/http instead
+  spec.add_dependency("sqlite3", "~> 1.6")  # Updated for Ruby 3.4 compatibility
 end
