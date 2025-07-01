@@ -3,11 +3,46 @@ module Cliptic
     class Main < Interface::Menu
       def opts
         {
-          "Play Today" => ->{Cliptic::Main::Player::Game.new.play},
-          "Select Date"=> ->{Select_Date.new.choose_opt},
-          "This Week"  => ->{This_Week.new.choose_opt},
-          "Recent Puzzles" => ->{Recent_Puzzles.new.choose_opt},
-          "High Scores"=> ->{High_Scores.new.choose_opt},
+          "Play Today" => ->{
+            begin
+              Cliptic::Main::Player::Game.new.play
+            rescue => e
+              puts "Error starting game: #{e.message}"
+              puts e.backtrace.join("\n") if $DEBUG
+            end
+          },
+          "Select Date"=> ->{
+            begin
+              Select_Date.new.choose_opt
+            rescue => e
+              puts "Error in Select Date: #{e.message}"
+              puts e.backtrace.join("\n") if $DEBUG
+            end
+          },
+          "This Week"  => ->{
+            begin
+              This_Week.new.choose_opt
+            rescue => e
+              puts "Error in This Week: #{e.message}"
+              puts e.backtrace.join("\n") if $DEBUG
+            end
+          },
+          "Recent Puzzles" => ->{
+            begin
+              Recent_Puzzles.new.choose_opt
+            rescue => e
+              puts "Error in Recent Puzzles: #{e.message}"
+              puts e.backtrace.join("\n") if $DEBUG
+            end
+          },
+          "High Scores"=> ->{
+            begin
+              High_Scores.new.choose_opt
+            rescue => e
+              puts "Error in High Scores: #{e.message}"
+              puts e.backtrace.join("\n") if $DEBUG
+            end
+          },
           "Quit"       => ->{exit}
         }
       end
@@ -26,32 +61,45 @@ module Cliptic
         "Select Date"
       end
       def ctrls
-        {
-          ?j  => ->{selector.cursor += 1},
-          ?k  => ->{selector.cursor -= 1},
-          258 => ->{selector.cursor += 1},  # KEY_DOWN
-          259 => ->{selector.cursor -= 1},  # KEY_UP
-          10  => ->{enter},                 # Enter key
-          13  => ->{enter},                 # Carriage return (Windows)
+        base_ctrls = {
+          ?j  => ->{inc_date(1)},
+          ?k  => ->{inc_date(-1)},
+          ?h  => ->{selector.cursor -= 1},
+          ?l  => ->{selector.cursor += 1},
+          258 => ->{inc_date(1)},   # KEY_DOWN
+          259 => ->{inc_date(-1)},  # KEY_UP
+          260 => ->{selector.cursor -= 1},  # KEY_LEFT
+          261 => ->{selector.cursor += 1},  # KEY_RIGHT
+          10  => ->{enter},          # Enter key
+          13  => ->{enter},          # Carriage return (Windows)
           ?q  => ->{back},
-          3   => ->{back},                  # Ctrl+C
-          27  => ->{back},                  # Escape
+          3   => ->{back},           # Ctrl+C
+          27  => ->{back},           # Escape
           Curses::KEY_RESIZE => ->{Screen.redraw(cb:->{redraw})}
         }
+        
+        # Add Windows-specific arrow key handling
+        if WINDOWS
+          base_ctrls.merge!({
+            72 => ->{inc_date(-1)},  # Up arrow
+            80 => ->{inc_date(1)},   # Down arrow
+            75 => ->{selector.cursor -= 1},  # Left arrow
+            77 => ->{selector.cursor += 1},  # Right arrow
+          })
+        end
+        
+        base_ctrls
       end
       def enter(pre_proc:->{hide}, post_proc:->{show})
         begin
           pre_proc.call if pre_proc
-          action = opts.values[selector.cursor]
-          if action
-            action.call
-          else
-            puts "No action defined for selection" if $DEBUG
-          end
+          # Play the game with the selected date
+          Main::Player::Game.new(date:stat_date).play
           reset_pos
           post_proc.call if post_proc
         rescue => e
           puts "Error in enter: #{e.message}"
+          puts e.backtrace.join("\n") if $DEBUG
           # Try to recover gracefully
           reset_pos
           post_proc.call if post_proc
@@ -137,7 +185,15 @@ module Cliptic
         days[selector.cursor]
       end
       def opts
-        @opts || days.map{|d| d.strftime("%A").ljust(9).center(12) + tickbox(d)}
+        @opts || days.each_with_object({}) do |date, hash|
+          day_str = date.strftime("%A").ljust(9).center(12) + tickbox(date)
+          hash[day_str] = ->{
+            hide
+            Main::Player::Game.new(date:date).play
+            reset_pos
+            show
+          }
+        end
       end
       def title
         "This Week"

@@ -125,8 +125,7 @@ module Cliptic
           rescue => e
             # Log error and continue instead of crashing
             puts "Error in selector: #{e.message}" if $DEBUG
-            # Try to gracefully exit
-            @run = false
+            puts e.backtrace.join("\n") if $DEBUG
           end
         end
       rescue => e
@@ -230,10 +229,23 @@ module Cliptic
         selector.select
       end
       def enter(pre_proc:->{hide}, post_proc:->{show})
-        pre_proc.call if pre_proc
-        opts.values[selector.cursor]&.call
-        reset_pos
-        post_proc.call if post_proc
+        begin
+          pre_proc.call if pre_proc
+          action = opts.values[selector.cursor]
+          if action
+            action.call
+          else
+            puts "No action found for cursor position #{selector.cursor}" if $DEBUG
+          end
+          reset_pos
+          post_proc.call if post_proc
+        rescue => e
+          puts "Error in menu enter: #{e.message}"
+          puts e.backtrace.join("\n") if $DEBUG
+          # Try to recover
+          reset_pos
+          post_proc.call if post_proc
+        end
       end
       def back(post_proc:->{hide})
         selector.stop
@@ -246,17 +258,29 @@ module Cliptic
         clear
       end
       def ctrls
-        {
+        base_ctrls = {
           ?j  => ->{selector.cursor += 1},
           ?k  => ->{selector.cursor -= 1},
           258 => ->{selector.cursor += 1},
           259 => ->{selector.cursor -= 1},
           10  => ->{enter},
+          13  => ->{enter},  # Carriage return for Windows
           ?q  => ->{back},
           3   => ->{back},
+          27  => ->{back},   # Escape key
           Curses::KEY_RESIZE => 
             ->{Screen.redraw(cb:->{redraw})}
         }
+        
+        # Add Windows-specific arrow key handling
+        if WINDOWS
+          base_ctrls.merge!({
+            72 => ->{selector.cursor -= 1},  # Up arrow
+            80 => ->{selector.cursor += 1},  # Down arrow
+          })
+        end
+        
+        base_ctrls
       end
       def reset_pos
         super
@@ -296,23 +320,40 @@ module Cliptic
       include Database
       attr_reader :dates
       def initialize(table:)
-        @dates = table.new
-          .select_list.map{|d| Date.parse(d[0])}
+        @dates = []
+        begin
+          @dates = table.new
+            .select_list.map{|d| Date.parse(d["date"])}
+        rescue => e
+          puts "Error loading #{table}: #{e.message}" if $DEBUG
+          # Return empty dates array if table doesn't exist
+        end
         super
       end
       def opts
-        dates.map{|d| d.to_long} || [nil]
+        if dates.empty?
+          {"No entries yet" => nil}
+        else
+          dates.each_with_object({}) do |date, hash|
+            hash[date.to_long] = ->{
+              hide
+              Main::Player::Game.new(date:date).play
+              reset_pos
+              show
+            }
+          end
+        end
       end
       def stat_date
-        dates[selector.cursor]
+        dates.empty? ? Date.today : dates[selector.cursor]
       end
     end
     class Yes_No_Menu < Menu
       attr_reader :yes, :no, :post_proc
       def initialize(yes:, no:->{back}, post_proc:nil, title:nil)
-        super
         @title = title
         @yes, @no, @post_proc = yes, no, post_proc
+        super
       end
       def opts
         {

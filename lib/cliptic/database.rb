@@ -245,7 +245,9 @@ module Cliptic
       end
       
       def select_list
-        select(cols:"*", order:{play_date:"DESC", play_time:"DESC"}, limit:10)
+        results = select(cols:"*", order:{play_date:"DESC", play_time:"DESC"}, limit:10)
+        # Ensure results is always an array
+        results.is_a?(Array) ? results : []
       end
       
       def add(date:)
@@ -293,8 +295,10 @@ module Cliptic
       end
       
       def select_list
-        select(cols:"*", where:{reveals:0}, 
-               order:{time:"ASC"}, limit:10)
+        results = select(cols:"*", where:{reveals:0}, 
+                        order:{time:"ASC"}, limit:10)
+        # Ensure results is always an array
+        results.is_a?(Array) ? results : []
       end
       
       def build(game:)

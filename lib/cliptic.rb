@@ -76,12 +76,13 @@ module Cliptic
   end
   
   require_relative "cliptic/version"
-  require_relative "cliptic/terminal.rb"
-  require_relative "cliptic/lib.rb"
-  require_relative "cliptic/config.rb"
-  require_relative "cliptic/database.rb"
-  require_relative "cliptic/windows.rb"
-  require_relative "cliptic/interface.rb"
-  require_relative "cliptic/menus.rb"
-  require_relative "cliptic/main.rb"
+  require_relative "cliptic/curses_helper"
+  require_relative "cliptic/terminal"
+  require_relative "cliptic/lib"
+  require_relative "cliptic/config"
+  require_relative "cliptic/database"
+  require_relative "cliptic/windows"
+  require_relative "cliptic/interface"
+  require_relative "cliptic/menus"
+  require_relative "cliptic/main"
 end
